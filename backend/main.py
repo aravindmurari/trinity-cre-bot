@@ -1,9 +1,13 @@
 import json
+import sys
+print("Starting: importing fastapi", flush=True, file=sys.stderr)
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+print("Starting: importing rag", flush=True, file=sys.stderr)
 import rag
+print("Starting: rag imported OK", flush=True, file=sys.stderr)
 
 app = FastAPI(title="Kepram AI Bot")
 
