@@ -6,7 +6,7 @@ The Trinity CRE Bot is an AI-powered chat assistant that lives on Burke's websit
 
 ---
 
-## The Four Building Blocks
+## The Five Building Blocks
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -14,11 +14,13 @@ The Trinity CRE Bot is an AI-powered chat assistant that lives on Burke's websit
 │   (Frontend)    │◀────│   (Backend)     │◀────│   (Claude AI)   │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                   │
-                                  ▼
-                         ┌─────────────────┐
-                         │    Supabase     │
-                         │  (Chat Logs DB) │
-                         └─────────────────┘
+                         ┌────────┴────────┐
+                         │                 │
+                         ▼                 ▼
+                ┌─────────────────┐  ┌─────────────────┐
+                │    Pinecone     │  │    Supabase     │
+                │  (Vector DB)    │  │  (Chat Logs DB) │
+                └─────────────────┘  └─────────────────┘
 ```
 
 ### 1. GitHub Pages — The Frontend (what the user sees)
@@ -42,7 +44,14 @@ The Trinity CRE Bot is an AI-powered chat assistant that lives on Burke's websit
 - Claude reads all of that and generates a response, streaming it back one word at a time
 - **Think of it as:** a highly knowledgeable associate who has read every article Burke has written and knows his entire playbook
 
-### 4. Supabase — The Database (the log)
+### 4. Pinecone — The Vector Database (the smart search index)
+- Stores the knowledge base as numerical "fingerprints" (called embeddings) rather than raw text
+- When a user asks a question, the backend converts it to the same fingerprint format, then finds the 3–5 most relevant knowledge chunks — without reading everything
+- This means Claude only receives the specific context relevant to the question, not the entire knowledge base
+- Scales well: a 10-page knowledge base and a 1,000-page knowledge base work the same way
+- **Think of it as:** a very fast librarian who can find the most relevant pages from any book, without reading every page each time
+
+### 5. Supabase — The Database (the log)
 - Stores every message (user and bot) with a timestamp and session ID
 - Free Postgres database hosted in the cloud
 - Lets you query, filter, and export conversations anytime
@@ -113,8 +122,32 @@ sequenceDiagram
 | Frontend hosting | GitHub Pages | Free | $0 |
 | Backend server | Railway | Hobby | ~$5 |
 | AI model | Anthropic (Claude) | Pay-per-use | ~$1–5 (low traffic) |
-| Database | Supabase | Free | $0 |
+| Embeddings | Voyage AI | Free tier | $0 |
+| Vector database | Pinecone | Free tier | $0 |
+| Chat logs | Supabase | Free | $0 |
 | **Total** | | | **~$6–10/month** |
+
+---
+
+## RAG — How the Vector Search Works
+
+RAG stands for **Retrieval-Augmented Generation**. It's the technique that makes the bot actually knowledgeable rather than just making things up.
+
+Without RAG, you'd have to paste the entire knowledge base into every Claude request — expensive, slow, and hits limits as the knowledge base grows.
+
+With RAG, the flow is:
+
+1. **At setup (one time):** Every knowledge document is split into chunks, converted into a numerical fingerprint (embedding), and stored in Pinecone
+2. **At query time:** The user's question is converted into the same fingerprint format, and Pinecone finds the 3–5 most similar knowledge chunks in milliseconds
+3. **Those chunks only** are passed to Claude as context — not the whole knowledge base
+
+This is what makes the system scalable to multiple clients. Each client gets their own Pinecone index. The backend logic is identical.
+
+### Why the Current Version Uses Direct Context Instead
+
+During initial deployment, the original RAG library (`fastembed`) required a component called `onnxruntime` to run the embedding model locally on the server. This library alone used 300–400 MB of RAM at startup — more than Railway's free tier limit of 512 MB — causing the server to crash silently with no error messages.
+
+The fix was to temporarily load all knowledge files directly into Claude's context (they're small enough at 32 KB), while switching to a remote embedding API for the proper RAG implementation. The next version of this bot will use **Voyage AI** for embeddings — a lightweight API that does the embedding remotely with a simple HTTP call, so there's no heavy model running on the server.
 
 ---
 

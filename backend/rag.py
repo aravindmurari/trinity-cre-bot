@@ -1,12 +1,14 @@
 import os
-import glob
 import anthropic
+import voyageai
+from pinecone import Pinecone
 from dotenv import load_dotenv
 
 load_dotenv()
 
-_knowledge: str | None = None
 _client: anthropic.Anthropic | None = None
+_voyage: voyageai.Client | None = None
+_pinecone_index = None
 
 SYSTEM_PROMPT = """You are the Trinity CRE assistant — a knowledgeable, professional digital representative for Trinity Commercial Real Estate, a commercial real estate firm at KW Commercial in Greater Atlanta. You represent Burke Doggett, the broker with 38 years of history in this market.
 
@@ -43,16 +45,29 @@ Omitting the consultation link is not acceptable — it is the primary CTA for t
 Tone: confident, market-savvy, efficient. Like a broker who respects the prospect's time."""
 
 
-def _get_knowledge() -> str:
-    global _knowledge
-    if _knowledge is None:
-        knowledge_dir = os.path.join(os.path.dirname(__file__), "..", "knowledge")
-        parts = []
-        for path in sorted(glob.glob(os.path.join(knowledge_dir, "*.md"))):
-            with open(path) as f:
-                parts.append(f.read())
-        _knowledge = "\n\n---\n\n".join(parts)
-    return _knowledge
+def _get_voyage() -> voyageai.Client:
+    global _voyage
+    if _voyage is None:
+        _voyage = voyageai.Client(api_key=os.environ["VOYAGE_API_KEY"])
+    return _voyage
+
+
+def _get_pinecone_index():
+    global _pinecone_index
+    if _pinecone_index is None:
+        pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+        _pinecone_index = pc.Index(os.environ["PINECONE_INDEX_NAME"])
+    return _pinecone_index
+
+
+def _retrieve_context(message: str) -> str:
+    result = _get_voyage().embed([message], model="voyage-3-lite", input_type="query")
+    query_embedding = result.embeddings[0]
+    matches = _get_pinecone_index().query(
+        vector=query_embedding, top_k=5, include_metadata=True
+    ).matches
+    chunks = [m.metadata["text"] for m in matches if m.metadata.get("text")]
+    return "\n\n---\n\n".join(chunks)
 
 
 def _get_client() -> anthropic.Anthropic:
@@ -62,18 +77,18 @@ def _get_client() -> anthropic.Anthropic:
     return _client
 
 
-def _build_messages(message: str, knowledge: str, history: list) -> list:
+def _build_messages(message: str, context: str, history: list) -> list:
     messages = [{"role": h["role"], "content": h["content"]} for h in history]
     messages.append({
         "role": "user",
-        "content": f"Knowledge base:\n{knowledge}\n\nUser message: {message}",
+        "content": f"Relevant context:\n{context}\n\nUser message: {message}",
     })
     return messages
 
 
 def query(message: str, history: list = None) -> dict:
-    knowledge = _get_knowledge()
-    messages = _build_messages(message, knowledge, history or [])
+    context = _retrieve_context(message)
+    messages = _build_messages(message, context, history or [])
     response = _get_client().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
@@ -84,8 +99,8 @@ def query(message: str, history: list = None) -> dict:
 
 
 def query_stream(message: str, history: list = None):
-    knowledge = _get_knowledge()
-    messages = _build_messages(message, knowledge, history or [])
+    context = _retrieve_context(message)
+    messages = _build_messages(message, context, history or [])
     with _get_client().messages.stream(
         model="claude-sonnet-4-6",
         max_tokens=1024,
