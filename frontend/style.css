@@ -22,9 +22,9 @@ body {
 
 #chat-container {
   width: 100%;
-  max-width: 700px;
-  height: 88vh;
-  max-height: 760px;
+  max-width: 820px;
+  height: 92vh;
+  max-height: 880px;
   display: flex;
   flex-direction: column;
   background: #ffffff;
