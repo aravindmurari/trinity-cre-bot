@@ -10,6 +10,9 @@ from pinecone import Pinecone
 
 load_dotenv()
 
+_retriever = None
+_claude = None
+
 SYSTEM_PROMPT = """You are the Trinity CRE assistant — a knowledgeable, professional digital representative for Trinity Commercial Real Estate, a commercial real estate firm at KW Commercial in Greater Atlanta. You represent Burke Doggett, the broker with 38 years of history in this market.
 
 Trinity CRE serves tenants, landlords, buyers, and sellers across three areas: industrial real estate (warehouses, distribution centers, manufacturing, flex/R&D), office space, and investment sales — all in the Greater Atlanta metro.
@@ -68,14 +71,24 @@ def _build_index():
     return VectorStoreIndex.from_vector_store(vector_store)
 
 
-_configure_settings()
-_index = _build_index()
-_retriever = VectorIndexRetriever(index=_index, similarity_top_k=3)
-_claude = anthropic_sdk.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def _get_retriever():
+    global _retriever
+    if _retriever is None:
+        _configure_settings()
+        _index = _build_index()
+        _retriever = VectorIndexRetriever(index=_index, similarity_top_k=3)
+    return _retriever
+
+
+def _get_claude():
+    global _claude
+    if _claude is None:
+        _claude = anthropic_sdk.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    return _claude
 
 
 def _retrieve_context(message: str) -> tuple[str, list[str]]:
-    nodes = _retriever.retrieve(message)
+    nodes = _get_retriever().retrieve(message)
     context = "\n\n---\n\n".join(node.text for node in nodes)
     sources = list({
         node.metadata.get("file_name", "")
@@ -97,7 +110,7 @@ def _build_messages(message: str, context: str, history: list) -> list:
 def query(message: str, history: list = None) -> dict:
     context, sources = _retrieve_context(message)
     messages = _build_messages(message, context, history or [])
-    response = _claude.messages.create(
+    response = _get_claude().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
         system=SYSTEM_PROMPT,
@@ -109,7 +122,7 @@ def query(message: str, history: list = None) -> dict:
 def query_stream(message: str, history: list = None):
     context, _ = _retrieve_context(message)
     messages = _build_messages(message, context, history or [])
-    with _claude.messages.stream(
+    with _get_claude().messages.stream(
         model="claude-sonnet-4-6",
         max_tokens=1024,
         system=SYSTEM_PROMPT,
