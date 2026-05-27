@@ -44,6 +44,7 @@
 
   <script>
     const API_URL = 'https://web-production-415a0.up.railway.app';
+    const SESSION_ID = crypto.randomUUID();
 
     const messagesEl = document.getElementById('chat-messages');
     const inputEl    = document.getElementById('chat-input');
@@ -130,7 +131,7 @@
         const res = await fetch(`${API_URL}/chat/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, history: history.slice(-10) }),
+          body: JSON.stringify({ message: text, history: history.slice(-10), session_id: SESSION_ID }),
         });
 
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
