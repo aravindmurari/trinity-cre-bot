@@ -9,4 +9,4 @@ COPY backend/ ./backend/
 COPY knowledge/ ./knowledge/
 
 WORKDIR /app/backend
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
+ENTRYPOINT ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
