@@ -6,7 +6,7 @@ The Trinity CRE Bot is an AI-powered chat assistant that lives on Burke's websit
 
 ---
 
-## The Five Building Blocks
+## The Six Building Blocks
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -14,13 +14,13 @@ The Trinity CRE Bot is an AI-powered chat assistant that lives on Burke's websit
 │   (Frontend)    │◀────│   (Backend)     │◀────│   (Claude AI)   │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                   │
-                         ┌────────┴────────┐
-                         │                 │
-                         ▼                 ▼
-                ┌─────────────────┐  ┌─────────────────┐
-                │    Pinecone     │  │    Supabase     │
-                │  (Vector DB)    │  │  (Chat Logs DB) │
-                └─────────────────┘  └─────────────────┘
+                    ┌─────────────┼─────────────┐
+                    │             │             │
+                    ▼             ▼             ▼
+           ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+           │  Voyage AI  │ │   Pinecone  │ │   Supabase  │
+           │ (Embeddings)│ │ (Vector DB) │ │ (Chat Logs) │
+           └─────────────┘ └─────────────┘ └─────────────┘
 ```
 
 ### 1. GitHub Pages — The Frontend (what the user sees)
@@ -40,18 +40,24 @@ The Trinity CRE Bot is an AI-powered chat assistant that lives on Burke's websit
 
 ### 3. Anthropic API — Claude AI (the intelligence)
 - The actual AI model (Claude Sonnet) that generates responses
-- The backend sends it: the conversation history + all of Burke's knowledge files + a detailed system prompt that defines Burke's persona, tone, and rules
+- The backend sends it: the conversation history + the most relevant knowledge chunks + a detailed system prompt that defines Burke's persona, tone, and rules
 - Claude reads all of that and generates a response, streaming it back one word at a time
 - **Think of it as:** a highly knowledgeable associate who has read every article Burke has written and knows his entire playbook
 
-### 4. Pinecone — The Vector Database (the smart search index)
+### 4. Voyage AI — The Embedding Service (the translator)
+- Converts text into numerical fingerprints (embeddings) that capture meaning, not just keywords
+- Used in two places: at setup to embed every knowledge chunk, and at query time to embed each user message so it can be compared against the knowledge base
+- Runs as a remote API — no heavy model on the server, which keeps Railway's memory usage low
+- **Think of it as:** a translator that converts both the question and the knowledge base into the same language so they can be compared
+
+### 5. Pinecone — The Vector Database (the smart search index)
 - Stores the knowledge base as numerical "fingerprints" (called embeddings) rather than raw text
 - When a user asks a question, the backend converts it to the same fingerprint format, then finds the 3–5 most relevant knowledge chunks — without reading everything
 - This means Claude only receives the specific context relevant to the question, not the entire knowledge base
 - Scales well: a 10-page knowledge base and a 1,000-page knowledge base work the same way
 - **Think of it as:** a very fast librarian who can find the most relevant pages from any book, without reading every page each time
 
-### 5. Supabase — The Database (the log)
+### 6. Supabase — The Database (the log)
 - Stores every message (user and bot) with a timestamp and session ID
 - Free Postgres database hosted in the cloud
 - Lets you query, filter, and export conversations anytime
@@ -61,7 +67,7 @@ The Trinity CRE Bot is an AI-powered chat assistant that lives on Burke's websit
 
 ## The Knowledge Base
 
-Burke's knowledge lives in six plain text files on the server. Every time a user sends a message, all six files are included in the prompt sent to Claude. Since Claude's context window is 200,000 tokens and these files total ~32KB, this works perfectly without any complex search system.
+Burke's knowledge lives in six markdown files in the `/knowledge` folder. At setup, they are chunked into ~800-character pieces and indexed in Pinecone via Voyage AI embeddings. When a user sends a message, only the 5 most relevant chunks are retrieved and passed to Claude — not the entire knowledge base.
 
 | File | What's in it |
 |------|-------------|
@@ -83,6 +89,8 @@ sequenceDiagram
     actor User
     participant Browser as Browser<br/>(GitHub Pages)
     participant Backend as Backend<br/>(Railway / FastAPI)
+    participant Voyage as Voyage AI<br/>(Embeddings)
+    participant Pinecone as Pinecone<br/>(Vector DB)
     participant Claude as Claude AI<br/>(Anthropic API)
     participant DB as Database<br/>(Supabase)
 
@@ -92,9 +100,13 @@ sequenceDiagram
 
     Browser->>Backend: POST /chat/stream<br/>{ message, history, session_id }
 
-    Backend->>Backend: Loads all 6<br/>knowledge files
+    Backend->>Voyage: Embed user message
+    Voyage-->>Backend: Query embedding (512 dims)
 
-    Backend->>Claude: Sends system prompt +<br/>knowledge base +<br/>conversation history +<br/>user message
+    Backend->>Pinecone: Query top-5 similar chunks
+    Pinecone-->>Backend: Relevant knowledge chunks
+
+    Backend->>Claude: Sends system prompt +<br/>relevant chunks +<br/>conversation history +<br/>user message
 
     Claude-->>Backend: Streams response<br/>token by token
 
@@ -143,11 +155,11 @@ With RAG, the flow is:
 
 This is what makes the system scalable to multiple clients. Each client gets their own Pinecone index. The backend logic is identical.
 
-### Why the Current Version Uses Direct Context Instead
+### Why Voyage AI Instead of a Local Embedding Model
 
-During initial deployment, the original RAG library (`fastembed`) required a component called `onnxruntime` to run the embedding model locally on the server. This library alone used 300–400 MB of RAM at startup — more than Railway's free tier limit of 512 MB — causing the server to crash silently with no error messages.
+During initial development, the original embedding library (`fastembed`) required `onnxruntime` to run the model locally on the server. That library alone used 300–400 MB of RAM at startup — more than Railway's memory limit — causing the server to crash silently.
 
-The fix was to temporarily load all knowledge files directly into Claude's context (they're small enough at 32 KB), while switching to a remote embedding API for the proper RAG implementation. The next version of this bot will use **Voyage AI** for embeddings — a lightweight API that does the embedding remotely with a simple HTTP call, so there's no heavy model running on the server.
+Voyage AI solves this by running the embedding model remotely. The backend makes a lightweight HTTP call, gets back a vector, and moves on. No large model loaded into server memory.
 
 ---
 
@@ -155,9 +167,8 @@ The fix was to temporarily load all knowledge files directly into Claude's conte
 
 The bot's knowledge comes entirely from the markdown files in the `/knowledge` folder. To update anything Burke says:
 
-1. Edit the relevant `.md` file in the GitHub repo
-2. Push to `main`
-3. Railway redeploys automatically (takes ~2 minutes)
-4. The bot immediately reflects the changes
+1. Edit the relevant `.md` file
+2. Re-run `ingest.py` to re-embed and reload into Pinecone (`cd backend && venv/bin/python3 ingest.py`)
+3. Push to `main` — Railway redeploys automatically (~2 minutes)
 
-No reindexing, no vector databases, no ML pipelines — just edit a text file.
+The ingest step is required because the knowledge lives in Pinecone, not in the server's memory. It takes a few minutes depending on how many files changed.
