@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trinity CRE Assistant</title>
+  <title id="page-title">Trinity CRE Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="config.js"></script>
 </head>
 <body>
   <div id="chat-container">
@@ -16,22 +17,19 @@
     <div id="chat-header">
       <img id="header-logo" src="logo-tcre-white.png" alt="Trinity CRE">
       <div id="header-info">
-        <div id="bot-tagline">Commercial Real Estate — Greater Atlanta <span id="online-badge">● Live</span></div>
+        <div id="bot-tagline"><span id="header-tagline">Commercial Real Estate — Greater Atlanta</span> <span id="online-badge">● Live</span></div>
       </div>
     </div>
 
     <div id="chat-messages">
-      <div class="message-row bot-row">
-        <div class="msg-avatar">T</div>
-        <div class="message bot-message">
-          Hi, I'm the Trinity CRE assistant. Trinity CRE helps businesses and investors with commercial real estate across Greater Atlanta — industrial space, office space, and investment sales.<br><br>
-          What brings you here today?
-        </div>
+      <div class="message-row bot-row" id="opening-row">
+        <div class="msg-avatar" id="opening-avatar">T</div>
+        <div class="message bot-message" id="opening-message"></div>
       </div>
     </div>
 
     <div id="chat-input-area">
-      <textarea id="chat-input" placeholder="Ask about commercial real estate in Atlanta..." autocomplete="off" autofocus rows="1"></textarea>
+      <textarea id="chat-input" placeholder="" autocomplete="off" autofocus rows="1"></textarea>
       <button id="send-btn" title="Send">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -43,7 +41,14 @@
   </div>
 
   <script>
-    const API_URL = 'https://web-production-415a0.up.railway.app';
+    // Apply config
+    document.getElementById('page-title').textContent     = CLIENT_CONFIG.pageTitle;
+    document.getElementById('header-tagline').textContent = CLIENT_CONFIG.tagline;
+    document.getElementById('opening-avatar').textContent = CLIENT_CONFIG.avatarLetter;
+    document.getElementById('opening-message').innerHTML  = CLIENT_CONFIG.openingMessage;
+    document.getElementById('chat-input').placeholder     = CLIENT_CONFIG.inputPlaceholder;
+
+    const API_URL  = CLIENT_CONFIG.apiUrl;
     const SESSION_ID = crypto.randomUUID();
 
     const messagesEl = document.getElementById('chat-messages');
@@ -76,7 +81,7 @@
       if (role === 'bot') {
         const avatar = document.createElement('div');
         avatar.className = 'msg-avatar';
-        avatar.textContent = 'T';
+        avatar.textContent = CLIENT_CONFIG.avatarLetter;
         row.appendChild(avatar);
       }
 
